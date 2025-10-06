@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+uploads/
+generated_ppt.pptx
+
+# Node / frontend (if any)
+node_modules/
+dist/
+.env
