@@ -20,7 +20,7 @@ function SlideEditor() {
   };
 
   return (
-    <div className="p-6 bg-white rounded-2xl shadow-md">
+    <div className="p-6 bg-white rounded-2xl shadow-md w-full">
       <h2 className="text-lg font-semibold mb-3">Edit Slide Content</h2>
 
       <input

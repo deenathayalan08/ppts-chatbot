@@ -1,6 +1,7 @@
-# backend/app/models/ai_model.py
-
 def generate_slide_contents(topic):
+    """
+    Dummy AI function to generate slide contents.
+    """
     return [
         {"title": f"{topic} - Introduction", "body": f"Introduction content for {topic}."},
         {"title": f"{topic} - Main Points", "body": f"Main content for {topic}."},

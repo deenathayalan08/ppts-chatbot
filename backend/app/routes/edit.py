@@ -1,23 +1,33 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException
+from app.models.schemas import Slide
 from pptx import Presentation
-import shutil
 import os
+from app.config import UPLOAD_FOLDER
+import logging
 
 router = APIRouter()
 
-EDIT_DIR = os.path.join(os.getcwd(), "uploads")
-os.makedirs(EDIT_DIR, exist_ok=True)
+@router.post("/")
+async def edit_slide(slide_number: int, text: str, filename: str):
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
 
-@router.post("/download/")
-async def download_edited_ppt(file: UploadFile = File(...)):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file uploaded")
-
-    # Save uploaded file temporarily
-    file_path = os.path.join(EDIT_DIR, file.filename)
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    # Return the file as response
-    return FileResponse(file_path, filename=file.filename)
+    try:
+        prs = Presentation(file_path)
+        if slide_number < 1 or slide_number > len(prs.slides):
+            raise HTTPException(status_code=400, detail="Invalid slide number")
+        
+        slide = prs.slides[slide_number - 1]
+        if slide.shapes.title:
+            slide.shapes.title.text = text
+        if len(slide.placeholders) > 1:
+            slide.placeholders[1].text = text
+        
+        prs.save(file_path)
+        logging.info(f"Slide {slide_number} updated in {filename}")
+        return {"message": f"Slide {slide_number} updated successfully!"}
+    
+    except Exception as e:
+        logging.error(f"Error editing slide: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

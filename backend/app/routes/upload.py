@@ -1,18 +1,16 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import os
 import shutil
+from app.config import UPLOAD_FOLDER
 
 router = APIRouter()
-UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/")
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    file_location = os.path.join(UPLOAD_DIR, file.filename)
-
+    file_location = os.path.join(UPLOAD_FOLDER, file.filename)
     try:
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
