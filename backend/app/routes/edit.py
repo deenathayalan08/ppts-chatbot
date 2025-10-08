@@ -1,33 +1,52 @@
-from fastapi import APIRouter, HTTPException
-from app.models.schemas import Slide
+from fastapi import APIRouter, UploadFile, Form
+from fastapi.responses import JSONResponse
 from pptx import Presentation
 import os
-from app.config import UPLOAD_FOLDER
-import logging
 
 router = APIRouter()
 
-@router.post("/")
-async def edit_slide(slide_number: int, text: str, filename: str):
+UPLOAD_FOLDER = "uploads"
+
+# --- Preview slides ---
+@router.get("/preview/")
+async def preview(filename: str):
     file_path = os.path.join(UPLOAD_FOLDER, filename)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+        return JSONResponse({"error": "File not found"}, status_code=404)
 
-    try:
-        prs = Presentation(file_path)
-        if slide_number < 1 or slide_number > len(prs.slides):
-            raise HTTPException(status_code=400, detail="Invalid slide number")
-        
-        slide = prs.slides[slide_number - 1]
-        if slide.shapes.title:
-            slide.shapes.title.text = text
-        if len(slide.placeholders) > 1:
-            slide.placeholders[1].text = text
-        
-        prs.save(file_path)
-        logging.info(f"Slide {slide_number} updated in {filename}")
-        return {"message": f"Slide {slide_number} updated successfully!"}
-    
-    except Exception as e:
-        logging.error(f"Error editing slide: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    prs = Presentation(file_path)
+    slides_data = []
+
+    for slide in prs.slides:
+        title = slide.shapes.title.text if slide.shapes.title else ""
+        body = ""
+        for shape in slide.shapes:
+            if shape.has_text_frame and shape != slide.shapes.title:
+                body += shape.text + "\n"
+        slides_data.append({"title": title, "body": body.strip()})
+
+    return {"slides": slides_data, "filename": filename}
+
+
+# --- Update a slide ---
+@router.post("/update/")
+async def update_slide(slide_number: int = Form(...), text: str = Form(...), filename: str = Form(...)):
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(file_path):
+        return JSONResponse({"error": "File not found"}, status_code=404)
+
+    prs = Presentation(file_path)
+
+    if slide_number < 1 or slide_number > len(prs.slides):
+        return JSONResponse({"error": "Invalid slide number"}, status_code=400)
+
+    slide = prs.slides[slide_number - 1]
+
+    # Update slide body (we assume title is already correct or editable via frontend)
+    for shape in slide.shapes:
+        if shape.has_text_frame and shape != slide.shapes.title:
+            shape.text = text
+
+    prs.save(file_path)
+
+    return {"message": f"Slide {slide_number} updated successfully!"}

@@ -1,44 +1,54 @@
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
-from pptx import Presentation
+from fastapi import APIRouter, Query, UploadFile, File
+from fastapi.responses import JSONResponse
+from app.utils.pptx_helper import generate_ppt_from_topic
 import os
-import logging
-from app.config import UPLOAD_FOLDER
-from app.models.ai_model import generate_slide_contents
+import uuid
 
-router = APIRouter()
+router = APIRouter(prefix="/generate", tags=["Generate PPT"])
 
-@router.post("/generate/")
-async def generate_ppt(topic: str, preview: bool = Query(True)):
+OUTPUT_DIR = "generated_files"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+@router.post("")  # No trailing slash for consistency
+async def generate_ppt(
+    topic: str = Query(..., description="Topic for the PPT"),
+    slides: int = Query(5, description="Number of slides to generate"),
+    preview: bool = Query(True, description="Return preview or actual file"),
+):
     try:
-        slides_data = generate_slide_contents(topic)
+        # Generate slide content
+        slide_data = generate_ppt_from_topic(topic, num_slides=slides)
 
         if preview:
-            # Return JSON for frontend preview
-            return JSONResponse(content={"slides": slides_data})
+            return {"slides": slide_data}
 
-        # Generate PPT file
-        prs = Presentation()
-        for slide_content in slides_data:
-            slide = prs.slides.add_slide(prs.slide_layouts[1])
-            slide.shapes.title.text = slide_content["title"]
-            slide.placeholders[1].text = slide_content["body"]
+        # Save final PPT
+        file_id = str(uuid.uuid4())[:8]
+        filename = f"{topic.replace(' ', '_')}_{file_id}.pptx"
+        file_path = os.path.join(OUTPUT_DIR, filename)
 
-        # Safe filename
-        safe_topic = "".join(c if c.isalnum() else "_" for c in topic).lower()
-        filename = f"{safe_topic}.pptx"
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        generate_ppt_from_topic(topic, num_slides=slides, save_path=file_path)
 
-        prs.save(filepath)
-        logging.info(f"✅ PPT created for topic: {topic}")
-
-        # Ensure proper download headers
-        return FileResponse(
-            path=filepath,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+        file_url = f"http://127.0.0.1:8000/generated_files/{filename}"
+        return {"file_url": file_url}
 
     except Exception as e:
-        logging.error(f"❌ Error generating PPT: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error generating PPT: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@router.post("/upload")
+async def upload_sample_ppt(file: UploadFile = File(...)):
+    try:
+        UPLOAD_DIR = "uploads"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+
+        return {"message": "Template uploaded successfully", "filename": file.filename}
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
