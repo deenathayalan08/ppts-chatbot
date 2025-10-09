@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { generatePPT, uploadTemplate, editSlide } from "../utils/api";
+import { generatePPT, uploadTemplate } from "../utils/api";
 
 export default function Generate() {
   const [topic, setTopic] = useState("");
@@ -7,9 +7,11 @@ export default function Generate() {
   const [uploadSample, setUploadSample] = useState(false);
   const [file, setFile] = useState(null);
   const [slides, setSlides] = useState([]);
+  const [originalSlides, setOriginalSlides] = useState([]);
   const [loading, setLoading] = useState(false);
   const [downloadLink, setDownloadLink] = useState("");
   const [filename, setFilename] = useState("");
+  const [activeSlide, setActiveSlide] = useState(null);
 
   const handleFileChange = (e) => setFile(e.target.files[0]);
 
@@ -18,25 +20,24 @@ export default function Generate() {
 
     setLoading(true);
     setSlides([]);
+    setOriginalSlides([]);
     setDownloadLink("");
     setFilename("");
+    setActiveSlide(null);
 
     try {
-      if (uploadSample && file) {
-        await uploadTemplate(file);
-      }
+      if (uploadSample && file) await uploadTemplate(file);
 
-      // Preview slides
       const previewData = await generatePPT(topic, numSlides, true);
       setSlides(previewData.slides || []);
-      setFilename(previewData.filename || "generated.pptx");
+      setOriginalSlides(previewData.slides || []);
 
-      // Generate full PPT
       const pptFile = await generatePPT(topic, numSlides, false);
       if (pptFile?.file_url) setDownloadLink(pptFile.file_url);
+      if (pptFile?.filename) setFilename(pptFile.filename);
 
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       alert("Error generating PPT.");
     } finally {
       setLoading(false);
@@ -44,18 +45,32 @@ export default function Generate() {
   };
 
   const handleSaveChanges = async () => {
+    if (!filename) return alert("No PPT generated yet!");
+
     try {
       for (let i = 0; i < slides.length; i++) {
-        await editSlide.update({
-          slide_number: i + 1,
-          text: slides[i].body,
-          filename,
-        });
+        const slide = slides[i];
+        await fetch(
+          `http://127.0.0.1:8000/generate/update_slide?filename=${encodeURIComponent(
+            filename
+          )}&slide_number=${i + 1}&title=${encodeURIComponent(
+            slide.title
+          )}&text=${encodeURIComponent(slide.body)}`,
+          { method: "POST" }
+        );
       }
       alert("Slides updated successfully!");
+      setDownloadLink(`http://127.0.0.1:8000/generated_files/${filename}`);
     } catch (err) {
+      console.error(err);
       alert("Error updating slides.");
     }
+  };
+
+  const handleResetSlide = (index) => {
+    const updated = [...slides];
+    updated[index] = { ...originalSlides[index] };
+    setSlides(updated);
   };
 
   return (
@@ -65,6 +80,7 @@ export default function Generate() {
           Generate Your PPT
         </h1>
 
+        {/* Inputs */}
         <div className="space-y-4">
           <input
             type="text"
@@ -73,6 +89,7 @@ export default function Generate() {
             placeholder="Enter your topic"
             className="w-full border p-2 rounded-md"
           />
+
           <input
             type="number"
             min="1"
@@ -81,19 +98,21 @@ export default function Generate() {
             onChange={(e) => setNumSlides(e.target.value)}
             className="w-full border p-2 rounded-md"
           />
+
           <div>
             <label>
               <input
                 type="checkbox"
                 checked={uploadSample}
                 onChange={() => setUploadSample(!uploadSample)}
-              />
+              />{" "}
               Upload Sample PPT
             </label>
             {uploadSample && (
               <input type="file" accept=".pptx" onChange={handleFileChange} />
             )}
           </div>
+
           <button
             onClick={handleGenerate}
             disabled={loading}
@@ -103,11 +122,33 @@ export default function Generate() {
           </button>
         </div>
 
+        {/* Editable Slide Preview */}
         {slides.length > 0 && (
           <div className="mt-6 bg-gray-50 p-4 rounded-md border">
-            <h2 className="text-xl font-bold mb-3">Editable Preview</h2>
+            <h2 className="text-xl font-bold mb-3">Editable Slide Preview</h2>
             {slides.map((slide, idx) => (
-              <div key={idx} className="p-3 mb-3 bg-white rounded-md border">
+              <div
+                key={idx}
+                onClick={() => setActiveSlide(idx)}
+                className={`p-3 mb-3 bg-white rounded-md border cursor-pointer ${
+                  activeSlide === idx ? "border-indigo-500 ring-2 ring-indigo-300" : "border-gray-200"
+                }`}
+              >
+                <div className="flex justify-between items-center mb-1">
+                  <span className="font-semibold text-indigo-600">
+                    Slide {idx + 1}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleResetSlide(idx);
+                    }}
+                    className="text-red-500 text-sm hover:underline"
+                  >
+                    Reset
+                  </button>
+                </div>
+
                 <input
                   type="text"
                   value={slide.title}
@@ -118,6 +159,7 @@ export default function Generate() {
                   }}
                   className="border p-1 rounded w-full mb-1"
                 />
+
                 <textarea
                   value={slide.body}
                   onChange={(e) => {
@@ -126,6 +168,7 @@ export default function Generate() {
                     setSlides(updated);
                   }}
                   className="border p-1 rounded w-full"
+                  rows={3}
                 />
               </div>
             ))}
@@ -139,6 +182,7 @@ export default function Generate() {
           </div>
         )}
 
+        {/* Download link */}
         {downloadLink && (
           <div className="mt-6 text-center">
             <a
@@ -146,7 +190,7 @@ export default function Generate() {
               download
               className="text-indigo-600 font-semibold hover:underline"
             >
-              📥 Download Generated PPT
+              📥 Download Updated PPT
             </a>
           </div>
         )}
