@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.routes import generate, edit, upload  # Absolute import
+from app.routes import generate, edit, upload  # Absolute imports
 
 app = FastAPI(title="PPT Chatbot Backend")
 
@@ -16,9 +16,9 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(generate.router)
-app.include_router(edit.router)
-app.include_router(upload.router)
+app.include_router(generate.router, prefix="")  # direct access to /generate
+app.include_router(edit.router, prefix="/edit")
+app.include_router(upload.router, prefix="/upload")
 
 # Create and serve static directories
 os.makedirs("generated_files", exist_ok=True)

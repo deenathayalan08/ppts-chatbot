@@ -1,65 +1,88 @@
-from fastapi import APIRouter, Query, UploadFile, File
+from fastapi import APIRouter, UploadFile, Form, Query
 from fastapi.responses import JSONResponse
-from app.utils.pptx_helper import generate_ppt_from_topic, update_slide
 import os
-import uuid
+from app.utils.pptx_helper import (
+    generate_ppt_from_topic,
+    update_slide,
+    add_image_to_slide,
+    add_video_to_slide
+)
 
-router = APIRouter(prefix="/generate", tags=["Generate PPT"])
+router = APIRouter()
+GENERATED_FOLDER = "generated_files"
+os.makedirs(GENERATED_FOLDER, exist_ok=True)
 
-OUTPUT_DIR = "generated_files"
-UPLOAD_DIR = "uploads"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# --- Generate / Preview PPT ---
-@router.post("")
+# --- Generate PPT with preview support ---
+@router.post("/generate")
 async def generate_ppt(
-    topic: str = Query(..., description="Topic for the PPT"),
-    slides: int = Query(5, description="Number of slides to generate"),
-    preview: bool = Query(True, description="Return preview or actual file"),
+    topic: str = Query(...),
+    slides: int = Query(5),
+    theme: str = Query("classic"),
+    preview: bool = Query(False),
+    audience: str = Query("Beginner"),
+    purpose: str = Query("Informative"),
+    tone: str = Query("Formal"),
+    autoMedia: bool = Query(False)
 ):
     try:
-        slide_data = generate_ppt_from_topic(topic, num_slides=slides)
+        file_name = f"{topic.replace(' ', '_')}.pptx"
+        save_path = os.path.join(GENERATED_FOLDER, file_name)
+
+        # Generate slide data
+        slides_data = generate_ppt_from_topic(
+            topic, num_slides=slides, theme=theme, save_path=save_path
+        )
 
         if preview:
-            # Return slides as JSON for preview
-            return {"slides": slide_data}
+            for slide in slides_data:
+                slide["media_suggestion"] = "Chart/Image suggestion"  # Placeholder
+            return JSONResponse({"slides": slides_data})
 
-        # Save PPT file
-        file_id = str(uuid.uuid4())[:8]
-        filename = f"{topic.replace(' ', '_')}_{file_id}.pptx"
-        file_path = os.path.join(OUTPUT_DIR, filename)
-        generate_ppt_from_topic(topic, num_slides=slides, save_path=file_path)
-
-        file_url = f"http://127.0.0.1:8000/generated_files/{filename}"
-        return {"file_url": file_url, "filename": filename}
-
+        return JSONResponse({
+            "message": "PPT generated successfully",
+            "file_name": file_name,
+            "slides_data": slides_data
+        })
     except Exception as e:
-        print(f"Error generating PPT: {e}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
-# --- Upload Sample PPT ---
-@router.post("/upload")
-async def upload_sample_ppt(file: UploadFile = File(...)):
-    try:
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
-        with open(file_path, "wb") as f:
-            f.write(await file.read())
-        return {"message": "Template uploaded successfully", "filename": file.filename}
 
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
-# --- Update Slide ---
-@router.post("/update_slide")
-async def edit_slide_api(
-    filename: str = Query(...),
-    slide_number: int = Query(...),
-    title: str = Query(...),
-    text: str = Query(...),
+# --- Update slide ---
+@router.post("/update-slide")
+async def update_slide_content(
+    filename: str = Form(...),
+    slide_number: int = Form(...),
+    title: str = Form(...),
+    text: str = Form(...)
 ):
     try:
-        file_path = update_slide(filename, slide_number, title, text, folder=OUTPUT_DIR)
-        return {"message": f"Slide {slide_number} updated successfully!", "file_path": file_path}
+        path = update_slide(filename, slide_number, title, text)
+        return {"message": "Slide updated successfully", "file_path": path}
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return {"error": str(e)}
+
+
+# --- Add media ---
+@router.post("/add-media")
+async def add_media_to_slide(
+    filename: str = Form(...),
+    slide_number: int = Form(...),
+    file: UploadFile = None,
+    media_type: str = Form("image")
+):
+    try:
+        if not file:
+            return {"error": "No file uploaded"}
+
+        file_path = os.path.join(GENERATED_FOLDER, file.filename)
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+
+        if media_type.lower() == "video":
+            updated_path = add_video_to_slide(filename, slide_number, file_path)
+        else:
+            updated_path = add_image_to_slide(filename, slide_number, file_path)
+
+        return {"message": f"{media_type.capitalize()} added successfully", "file_path": updated_path}
+    except Exception as e:
+        return {"error": str(e)}

@@ -30,7 +30,7 @@ async def preview(filename: str):
 
 # --- Update a slide ---
 @router.post("/update/")
-async def update_slide(slide_number: int = Form(...), text: str = Form(...), filename: str = Form(...)):
+async def update_slide(slide_number: int = Form(...), title: str = Form(...), text: str = Form(...), filename: str = Form(...)):
     file_path = os.path.join(UPLOAD_FOLDER, filename)
     if not os.path.exists(file_path):
         return JSONResponse({"error": "File not found"}, status_code=404)
@@ -42,7 +42,9 @@ async def update_slide(slide_number: int = Form(...), text: str = Form(...), fil
 
     slide = prs.slides[slide_number - 1]
 
-    # Update slide body (we assume title is already correct or editable via frontend)
+    # Update slide title and body
+    if slide.shapes.title:
+        slide.shapes.title.text = title
     for shape in slide.shapes:
         if shape.has_text_frame and shape != slide.shapes.title:
             shape.text = text
